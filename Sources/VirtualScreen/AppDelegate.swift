@@ -2,7 +2,7 @@ import AppKit
 import ScreenCaptureKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var controlPanel: ControlPanelWindow!
+    private var statusItem: NSStatusItem!
     private var captureEngine = CaptureEngine()
     private var outputWindow: OutputWindow?
     private var overlayWindow: SelectionOverlayWindow?
@@ -12,13 +12,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var selectedRegion: CGRect?
     private var selectedScreen: NSScreen?
     private var fps = 30
+    private var isCapturing = false
+    private var errorMessage: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
-        controlPanel = ControlPanelWindow(delegate: self)
-        controlPanel.window.makeKeyAndOrderFront(nil)
-        controlPanel.window.center()
-        NSApp.activate(ignoringOtherApps: true)
+
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = statusItem.button {
+            button.image = NSImage(systemSymbolName: "rectangle.dashed", accessibilityDescription: "VirtualScreen")
+        }
+
+        rebuildMenu()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
@@ -27,6 +32,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    private func rebuildMenu() {
+        let menu = NSMenu()
+
+        if let region = selectedRegion {
+            let label = NSMenuItem(title: "\(Int(region.width)) × \(Int(region.height)) at (\(Int(region.origin.x)), \(Int(region.origin.y)))", action: nil, keyEquivalent: "")
+            label.isEnabled = false
+            menu.addItem(label)
+            menu.addItem(.separator())
+        }
+
+        let selectRegion = NSMenuItem(title: "Select Region", action: #selector(selectRegionClicked), keyEquivalent: "")
+        selectRegion.target = self
+        selectRegion.isEnabled = !isCapturing
+        menu.addItem(selectRegion)
+
+        menu.addItem(.separator())
+
+        if isCapturing {
+            let stop = NSMenuItem(title: "Stop Capture", action: #selector(stopCaptureClicked), keyEquivalent: "")
+            stop.target = self
+            menu.addItem(stop)
+        } else {
+            let start = NSMenuItem(title: "Start Capture", action: #selector(startCaptureClicked), keyEquivalent: "")
+            start.target = self
+            start.isEnabled = selectedRegion != nil
+            menu.addItem(start)
+        }
+
+        menu.addItem(.separator())
+
+        let fpsItem = NSMenuItem(title: "FPS", action: nil, keyEquivalent: "")
+        let fpsSubmenu = NSMenu()
+        for rate in [15, 30, 60] {
+            let item = NSMenuItem(title: "\(rate)", action: #selector(fpsSelected(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = rate
+            item.state = fps == rate ? .on : .off
+            fpsSubmenu.addItem(item)
+        }
+        fpsItem.submenu = fpsSubmenu
+        menu.addItem(fpsItem)
+
+        if let error = errorMessage {
+            menu.addItem(.separator())
+            let errorItem = NSMenuItem(title: error, action: nil, keyEquivalent: "")
+            errorItem.isEnabled = false
+            menu.addItem(errorItem)
+        }
+
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit VirtualScreen", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(quit)
+
+        statusItem.menu = menu
+    }
+
+    @objc private func selectRegionClicked() {
+        showOverlay()
+    }
+
+    @objc private func startCaptureClicked() {
+        startCapture()
+    }
+
+    @objc private func stopCaptureClicked() {
+        stopCapture()
+    }
+
+    @objc private func fpsSelected(_ sender: NSMenuItem) {
+        let newFPS = sender.tag
+        self.fps = newFPS
+        rebuildMenu()
+        if captureEngine.isRunning, let region = selectedRegion, let screen = selectedScreen {
+            Task {
+                try? await captureEngine.updateRegion(
+                    regionInAppKit: region,
+                    screenHeight: screen.frame.height,
+                    scaleFactor: screen.backingScaleFactor,
+                    fps: newFPS
+                )
+            }
+        }
     }
 
     private func showOverlay() {
@@ -52,7 +141,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let region = selectedRegion, let screen = selectedScreen else { return }
 
         guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            controlPanel.state.errorMessage = "Could not identify display"
+            errorMessage = "Could not identify display"
+            rebuildMenu()
             return
         }
 
@@ -76,10 +166,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if outputNum > 0 {
             excludeIDs.append(CGWindowID(outputNum))
         }
-        let controlNum = controlPanel.window.windowNumber
-        if controlNum > 0 {
-            excludeIDs.append(CGWindowID(controlNum))
-        }
         let frameNum = frame.windowNumber
         if frameNum > 0 {
             excludeIDs.append(CGWindowID(frameNum))
@@ -90,7 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let hasPermission = await PermissionManager.ensurePermission()
                 guard hasPermission else {
                     await MainActor.run {
-                        controlPanel.state.errorMessage = "Screen recording permission denied. Grant access in System Settings > Privacy > Screen Recording."
+                        self.errorMessage = "Screen recording permission denied. Grant access in System Settings > Privacy > Screen Recording."
+                        self.rebuildMenu()
                     }
                     return
                 }
@@ -104,14 +191,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     fps: fps
                 )
                 await MainActor.run {
-                    controlPanel.state.isCapturing = true
-                    controlPanel.state.errorMessage = nil
-                    controlPanel.updateView()
+                    self.isCapturing = true
+                    self.errorMessage = nil
+                    self.rebuildMenu()
                 }
             } catch {
                 await MainActor.run {
-                    controlPanel.state.errorMessage = error.localizedDescription
-                    controlPanel.updateView()
+                    self.errorMessage = error.localizedDescription
+                    self.rebuildMenu()
                 }
             }
         }
@@ -123,8 +210,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             try? await captureEngine.stopCapture()
             await MainActor.run {
-                controlPanel.state.isCapturing = false
-                controlPanel.updateView()
+                self.isCapturing = false
+                self.rebuildMenu()
             }
         }
     }
@@ -135,40 +222,10 @@ extension AppDelegate: SelectionOverlayDelegate {
         dismissOverlay()
         selectedRegion = rect
         selectedScreen = screen
-        controlPanel.state.selectedRegion = rect
-        controlPanel.updateView()
+        startCapture()
     }
 
     func selectionDidCancel() {
         dismissOverlay()
-    }
-}
-
-extension AppDelegate: ControlPanelDelegate {
-    func controlPanelDidRequestSelectRegion() {
-        showOverlay()
-    }
-
-    func controlPanelDidRequestStartCapture() {
-        startCapture()
-    }
-
-    func controlPanelDidRequestStopCapture() {
-        stopCapture()
-    }
-
-    func controlPanelDidChangeFPS(_ fps: Int) {
-        self.fps = fps
-        controlPanel.state.fps = fps
-        if captureEngine.isRunning, let region = selectedRegion, let screen = selectedScreen {
-            Task {
-                try? await captureEngine.updateRegion(
-                    regionInAppKit: region,
-                    screenHeight: screen.frame.height,
-                    scaleFactor: screen.backingScaleFactor,
-                    fps: fps
-                )
-            }
-        }
     }
 }
