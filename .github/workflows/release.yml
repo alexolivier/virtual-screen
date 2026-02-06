@@ -15,8 +15,15 @@ jobs:
 
       - uses: swift-actions/setup-swift@v2
 
-      - name: Build
-        run: swift build -c release
+      - name: Build universal binary
+        run: |
+          swift build -c release --arch arm64
+          swift build -c release --arch x86_64
+          lipo -create \
+            .build/arm64-apple-macosx/release/VirtualScreen \
+            .build/x86_64-apple-macosx/release/VirtualScreen \
+            -output VirtualScreen-universal
+          lipo -info VirtualScreen-universal
 
       - name: Package app bundle
         run: |
@@ -25,7 +32,7 @@ jobs:
           MACOS="$CONTENTS/MacOS"
           RESOURCES="$CONTENTS/Resources"
           mkdir -p "$MACOS" "$RESOURCES"
-          cp .build/release/VirtualScreen "$MACOS/VirtualScreen"
+          cp VirtualScreen-universal "$MACOS/VirtualScreen"
           cp Sources/VirtualScreen/Info.plist "$CONTENTS/Info.plist"
           cp Resources/AppIcon.icns "$RESOURCES/AppIcon.icns"
           codesign --force --deep -s - "$APP"
