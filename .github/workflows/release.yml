@@ -7,11 +7,13 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - uses: swift-actions/setup-swift@v2
 
       - name: Build
         run: swift build -c release
@@ -24,6 +26,7 @@ jobs:
           mkdir -p "$MACOS"
           cp .build/release/VirtualScreen "$MACOS/VirtualScreen"
           cp Sources/VirtualScreen/Info.plist "$CONTENTS/Info.plist"
+          codesign --force --deep -s - "$APP"
           zip -r VirtualScreen-macos.zip "$APP"
 
       - name: Create Release
@@ -31,3 +34,5 @@ jobs:
         with:
           files: VirtualScreen-macos.zip
           generate_release_notes: true
+          body: |
+            > **macOS Gatekeeper note:** After unzipping, right-click the app and select **Open** to bypass the unidentified developer warning. If you see "damaged and can't be opened", run: `xattr -cr VirtualScreen.app`
