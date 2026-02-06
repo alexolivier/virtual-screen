@@ -23,16 +23,37 @@ jobs:
           APP="VirtualScreen.app"
           CONTENTS="$APP/Contents"
           MACOS="$CONTENTS/MacOS"
-          mkdir -p "$MACOS"
+          RESOURCES="$CONTENTS/Resources"
+          mkdir -p "$MACOS" "$RESOURCES"
           cp .build/release/VirtualScreen "$MACOS/VirtualScreen"
           cp Sources/VirtualScreen/Info.plist "$CONTENTS/Info.plist"
+          cp Resources/AppIcon.icns "$RESOURCES/AppIcon.icns"
           codesign --force --deep -s - "$APP"
-          zip -r VirtualScreen-macos.zip "$APP"
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "VirtualScreen" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "VirtualScreen.app" 150 190 \
+            --app-drop-link 450 190 \
+            --hide-extension "VirtualScreen.app" \
+            --no-internet-enable \
+            VirtualScreen.dmg \
+            VirtualScreen.app
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: VirtualScreen-macos.zip
+          files: VirtualScreen.dmg
           generate_release_notes: true
           body: |
-            > **macOS Gatekeeper note:** After unzipping, right-click the app and select **Open** to bypass the unidentified developer warning. If you see "damaged and can't be opened", run: `xattr -cr VirtualScreen.app`
+            ## Install
+            1. Download **VirtualScreen.dmg**
+            2. Open the DMG and drag **VirtualScreen** to Applications
+            3. Launch from Applications
+
+            > **macOS Gatekeeper:** The app is not notarized. On first launch, right-click and select **Open**. If you see "damaged and can't be opened", run: `xattr -cr /Applications/VirtualScreen.app`
