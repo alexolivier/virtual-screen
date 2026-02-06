@@ -16,15 +16,18 @@ jobs:
       - name: Build
         run: swift build -c release
 
-      - name: Package binary
+      - name: Package app bundle
         run: |
-          BINARY=".build/release/VirtualScreen"
-          mkdir -p dist
-          cp "$BINARY" dist/VirtualScreen
-          cd dist && zip VirtualScreen-macos.zip VirtualScreen
+          APP="VirtualScreen.app"
+          CONTENTS="$APP/Contents"
+          MACOS="$CONTENTS/MacOS"
+          mkdir -p "$MACOS"
+          cp .build/release/VirtualScreen "$MACOS/VirtualScreen"
+          cp Sources/VirtualScreen/Info.plist "$CONTENTS/Info.plist"
+          zip -r VirtualScreen-macos.zip "$APP"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/VirtualScreen-macos.zip
+          files: VirtualScreen-macos.zip
           generate_release_notes: true
