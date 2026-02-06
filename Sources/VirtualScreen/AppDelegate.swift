@@ -107,11 +107,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.fps = newFPS
         rebuildMenu()
         if captureEngine.isRunning, let region = selectedRegion, let screen = selectedScreen {
+            let screenHeight = screen.frame.height
+            let scaleFactor = screen.backingScaleFactor
             Task {
                 try? await captureEngine.updateRegion(
                     regionInAppKit: region,
-                    screenHeight: screen.frame.height,
-                    scaleFactor: screen.backingScaleFactor,
+                    screenHeight: screenHeight,
+                    scaleFactor: scaleFactor,
                     fps: newFPS
                 )
             }
@@ -161,15 +163,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         captureEngine.receiver = output.frameRenderer
 
-        var excludeIDs: [CGWindowID] = []
-        let outputNum = output.windowNumber
-        if outputNum > 0 {
-            excludeIDs.append(CGWindowID(outputNum))
-        }
-        let frameNum = frame.windowNumber
-        if frameNum > 0 {
-            excludeIDs.append(CGWindowID(frameNum))
-        }
+        let excludeIDs: [CGWindowID] = [output.windowNumber, frame.windowNumber]
+            .filter { $0 > 0 }
+            .map { CGWindowID($0) }
 
         Task {
             do {
