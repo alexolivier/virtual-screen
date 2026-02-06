@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.alexolivier.VirtualScreen</string>
+    <key>CFBundleName</key>
+    <string>VirtualScreen</string>
+    <key>CFBundleDisplayName</key>
+    <string>Virtual Screen</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>VirtualScreen needs screen recording permission to capture a region of your display.</string>
+</dict>
+</plist>

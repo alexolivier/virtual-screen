@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:virtual-screen}",
+      "name": "Debug VirtualScreen",
+      "target": "VirtualScreen",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug VirtualScreen"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:virtual-screen}",
+      "name": "Release VirtualScreen",
+      "target": "VirtualScreen",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release VirtualScreen"
+    }
+  ]
+}
