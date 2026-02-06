@@ -14,6 +14,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var fps = 30
     private var isCapturing = false
     private var errorMessage: String?
+    private var activePreset: String?
+
+    private static let presets: [(label: String, width: CGFloat, height: CGFloat)] = [
+        ("720p (1280×720)", 1280, 720),
+        ("1080p (1920×1080)", 1920, 1080),
+        ("4K (3840×2160)", 3840, 2160),
+    ]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
@@ -48,6 +55,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         selectRegion.target = self
         selectRegion.isEnabled = !isCapturing
         menu.addItem(selectRegion)
+
+        let presetItem = NSMenuItem(title: "Region Size", action: nil, keyEquivalent: "")
+        let presetSubmenu = NSMenu()
+        for (index, preset) in Self.presets.enumerated() {
+            let item = NSMenuItem(title: preset.label, action: #selector(presetSelected(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.state = activePreset == preset.label ? .on : .off
+            presetSubmenu.addItem(item)
+        }
+        presetItem.submenu = presetSubmenu
+        menu.addItem(presetItem)
 
         menu.addItem(.separator())
 
@@ -100,6 +119,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func stopCaptureClicked() {
         stopCapture()
+    }
+
+    @objc private func presetSelected(_ sender: NSMenuItem) {
+        let preset = Self.presets[sender.tag]
+        guard let screen = NSScreen.main else { return }
+
+        let screenFrame = screen.visibleFrame
+        let w = preset.width
+        let h = preset.height
+        let x = screenFrame.origin.x + (screenFrame.width - w) / 2
+        let y = screenFrame.origin.y + (screenFrame.height - h) / 2
+        let region = CGRect(x: x, y: y, width: w, height: h)
+
+        if isCapturing { stopCapture() }
+        activePreset = preset.label
+        selectedRegion = region
+        selectedScreen = screen
+        startCapture()
     }
 
     @objc private func fpsSelected(_ sender: NSMenuItem) {
@@ -158,6 +195,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         regionFrameWindow?.close()
         let frame = RegionFrameWindow(region: region)
+        frame.onRegionMoved = { [weak self] newRegion in
+            guard let self, let screen = self.selectedScreen else { return }
+            self.activePreset = nil
+            self.selectedRegion = newRegion
+            self.rebuildMenu()
+            let screenHeight = screen.frame.height
+            let scaleFactor = screen.backingScaleFactor
+            Task {
+                try? await self.captureEngine.updateRegion(
+                    regionInAppKit: newRegion,
+                    screenHeight: screenHeight,
+                    scaleFactor: scaleFactor,
+                    fps: self.fps
+                )
+            }
+        }
         frame.orderFront(nil)
         self.regionFrameWindow = frame
 
@@ -216,6 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: SelectionOverlayDelegate {
     func selectionDidComplete(rect: CGRect, screen: NSScreen) {
         dismissOverlay()
+        activePreset = nil
         selectedRegion = rect
         selectedScreen = screen
         startCapture()
